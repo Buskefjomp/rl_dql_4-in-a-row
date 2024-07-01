@@ -52,7 +52,7 @@ class FiarBoard:
         if self._state[the_col, the_row] != player:
             return 0
 
-        # Start the search - from the middle and out.
+        # Start the search - from the middle and out (one could close the row between two halves)
         # Do left and right, up and down and the two diagonals
         max_len = 0
         for dx, dy in ((+1, 0), (0, +1), (+1, +1), (+1, -1)):

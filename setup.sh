@@ -8,3 +8,5 @@ pip3 install torch
 
 # python 3.10
 # python3 -m pip install -r requirements.txt
+
+# python3 -m pip freeze > requiremenst.txt

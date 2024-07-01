@@ -12,6 +12,7 @@ def test_add_count():
     assert dut.add_coin(1, -1) is None, "Not too early column?"
     assert dut.add_coin(1, dut.cols) is None, "Not beyond columns?"
 
+    # Fill up a column and test underway
     player = 1
     column = 2
     for i_row in range(dut.rows):
