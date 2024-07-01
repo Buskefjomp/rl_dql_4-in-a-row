@@ -20,5 +20,54 @@ def test_add_count():
     assert dut.add_coin(player, column) is None, "Row is not full?"
 
 
+def test_get_span():
+    """Validate getting spans."""
+    dut = FiarBoard()
+
+    s = dut._state  # let's mangle this
+
+    # Test the horizontal
+    player1 = 1
+    s[0, 0] = player1
+    assert dut.get_span(player1, 0, 0) == 1
+    s[1, 0] = player1
+    assert dut.get_span(player1, 0, 0) == 2
+    s[2, 0] = player1
+    assert dut.get_span(player1, 0, 0) == 3
+    s[3, 0] = player1
+    assert dut.get_span(player1, 0, 0) == 4
+    assert dut.get_span(player1, 2, 0) == 4
+
+    # Test vertical
+    dut.clear_state()
+    s = dut._state
+    player = 2
+    for i_row in range(0, 4):
+        s[2, i_row + 1] = player
+        assert dut.get_span(player, 2, i_row + 1) == i_row + 1
+    assert dut.get_span(player, 2, 3) == 4
+    assert dut.get_span(player + 1, 2, 3) == 0
+
+    # Test first diagonal, from upper left and down-right
+    dut.clear_state()
+    s = dut._state
+    player = 2
+    for i_step in range(0, 4):
+        s[1 + i_step, dut.rows - 1 - i_step] = player
+        assert dut.get_span(player, 1, dut.rows - 1) == i_step + 1
+    assert dut.get_span(player, 3, dut.rows - 3) == 4
+
+    # Test second diagonal, from lower left and up-right
+    dut.clear_state()
+    s = dut._state
+    player = 4
+    for i_step in range(0, 4):
+        s[1 + i_step, i_step] = player
+        # dut.print_state()
+        assert dut.get_span(player, 1, 0) == i_step + 1
+    assert dut.get_span(player, 3, 2) == 4
+    # dut.print_state()
+
+
 if __name__ == "__main__":
     test_add_count()

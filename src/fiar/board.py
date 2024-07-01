@@ -40,12 +40,39 @@ class FiarBoard:
         the_col = column
         the_row = end_row
         self._state[the_col, the_row] = player
-        
+
         return (column, end_row)
 
-    def get_state(self):
-        """Return the current state."""
-        return self._state
+    def get_span(self, player, the_col, the_row):
+        """Return longest spanning line for <player> at <the_col, the_row> or None if illegal."""
+        if (the_col < 0) or (self.cols <= the_col):
+            return None
+        if (the_row < 0) or (self.rows <= the_row):
+            return None
+        if self._state[the_col, the_row] != player:
+            return 0
+
+        # Start the search - from the middle and out.
+        # Do left and right, up and down and the two diagonals
+        max_len = 0
+        for dx, dy in ((+1, 0), (0, +1), (+1, +1), (+1, -1)):
+            cur_len = 1  # this is the initial spot
+            # print("d x-y", dx, dy, "base", the_col, the_row)
+            for dir in (-1, 1):
+                for i_step in range(1, 4):
+                    i_col = the_col + dx * dir * i_step
+                    i_row = the_row + dy * dir * i_step
+                    # print("\ti_step", i_step, "->", i_col, i_row)
+                    if not (0 <= i_col < self.cols):
+                        break
+                    if not (0 <= i_row < self.rows):
+                        break
+                    if self._state[i_col, i_row] == player:
+                        cur_len += 1
+                    else:
+                        break
+            max_len = max(max_len, cur_len)
+        return max_len
 
     def clear_state(self):
         """Cleanup and start over."""
@@ -53,8 +80,16 @@ class FiarBoard:
 
     def print_state(self):
         """Print it all nicely."""
-        for i_row in range(self.rows - 1, 0, -1):
-            print("\t", end='')
+        print("<state>  ")
+        for i_row in range(self.rows - 1, -1, -1):
+            print(f"\t{i_row:2d}: ", end="")
             for i_col in range(0, self.cols):
                 print(f" {self._state[i_col, i_row]:2d}", end="")
             print("")
+        print("\t----------------------")
+        print("\t -  ", end="")
+        for i_col in range(0, self.cols):
+            print(f" {i_col:2d}", end="")
+        print("")
+
+        print("</state>")
