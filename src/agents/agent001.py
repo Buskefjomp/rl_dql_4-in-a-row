@@ -12,6 +12,7 @@ https://towardsdatascience.com/develop-your-first-ai-agent-deep-q-learning-37587
 import argparse
 import collections
 import logging
+import pathlib
 import pdb
 import random
 import traceback
@@ -21,6 +22,7 @@ import torch
 from fiar.board import FiarBoard
 
 _LOG = logging.getLogger(__name__)
+_MODEL_SAVE_PATH = pathlib.Path(__file__).absolute().parent / "agent001.torch_save"
 
 
 # ######################### Entry #########################
@@ -104,17 +106,19 @@ def train_agent_001():
 
             # ##### Take a step, save the experience (including reward) #####
             result = board.add_coin(player, action)
-            if result is None:  # illegal move
-                continue
 
             # How did that go?
-            n = board.get_span(1, result[0], result[1])
+            n = 0
+            if result is not None:  # Can do an illegal move here
+                n = board.get_span(1, result[0], result[1])
             done = n >= 4
 
             # Set the reward
             reward = -1
             if done:  # won the game?
                 reward = 100
+            elif result is None:
+                reward = -100  # please don't do illegal moves
             elif n > 1:  # placing coins next to each other?
                 reward += n * 10
 
@@ -167,10 +171,12 @@ def train_agent_001():
                 break
 
         if i_ep % 100 == 0:
-            _LOG.debug(
+            _LOG.info(
                 "Episode: %d/%d (%d steps), result:\n", i_ep, episodes, i_step + 1
             )
             board.print_state()
+    _LOG.info("Did %d episodes, saving model to: %s", episodes, _MODEL_SAVE_PATH)
+    torch.save(agent, _MODEL_SAVE_PATH)
 
 
 class Agent001(torch.nn.Module):
@@ -199,6 +205,62 @@ class Agent001(torch.nn.Module):
 # ######################### Playing #########################
 def play_agent_001():
     """Play against the agent."""
+    board = FiarBoard()
+    agent = torch.load(_MODEL_SAVE_PATH)
+
+    board.clear_state()
+    player_agent = 1
+    player_user = 2
+
+    _LOG.info("Player actions: s: skip, q: quit, <0, .. n> add coin to column n")
+    _LOG.info("Agent is player %d", player_agent)
+    _LOG.info("User is player %d", player_user)
+
+    for i in range(1000):
+        _LOG.info("Move %4d", i)
+
+        # ########## Agent move ##########
+        _LOG.info("Agent moves")
+        x_ten = torch.Tensor(board.get_flat_state())
+        q_vals = agent.forward(x_ten)
+        action = torch.argmax(q_vals)
+        _LOG.debug("\tQ-vals: %s", q_vals)
+        _LOG.debug("\tAction: %d", action)
+        result = board.add_coin(player_agent, action)
+        board.print_state()
+        if result is None:
+            _LOG.warning("\tIllegal move from agent")
+        else:
+            n_conn = board.get_span(player_agent, result[0], result[1])
+            _LOG.debug("\tAgent connected %d coins", n_conn)
+            if n_conn >= 4:
+                _LOG.debug("\tAgent wins \o/ !!!")
+                break
+
+        # ########## Player action ##########
+        stri = input("Enter action:")
+        if stri == "s":
+            _LOG.debug("\tSkipping action")
+        elif stri == "q":
+            _LOG.debug("\tQuitting")
+            break
+        else:
+            try:
+                action = int(stri)
+            except ValueError:
+                _LOG.debug("Whut number?")
+                continue
+            result = board.add_coin(player_user, action)
+            board.print_state()
+            if result is None:
+                _LOG.warning("\tIllegal move from player")
+            else:
+                n_conn = board.get_span(player_user, result[0], result[1])
+                _LOG.debug("\tUser connected %d coins", n_conn)
+                if n_conn >= 4:
+                    _LOG.debug("\tUser wins (blast!!) !!!")
+                    break
+    _LOG.info("End of game after %d turns", i + 1)
 
 
 if __name__ == "__main__":
