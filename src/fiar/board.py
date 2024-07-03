@@ -22,8 +22,8 @@ class FiarBoard:
         Return the indexed column and row as a tuple.
         Return None if this is an illegal action.
         """
-        assert isinstance(player, int)
-        assert isinstance(column, int)
+        # assert isinstance(player, int)
+        # assert isinstance(column, int)
         if player <= 0:
             return None
         if not (0 <= column < self.cols):
@@ -86,10 +86,9 @@ class FiarBoard:
             for i_col in range(0, self.cols):
                 print(f" {self._state[i_col, i_row]:2d}", end="")
             print("")
-        print("\t----------------------")
+        print("\t-------------------------")
         print("\t -  ", end="")
         for i_col in range(0, self.cols):
             print(f" {i_col:2d}", end="")
         print("")
-
         print("</state>")

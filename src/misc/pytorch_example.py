@@ -27,11 +27,11 @@ class NeuralNetwork(torch.nn.Module):
         n_hidden = 5
         self.linear_relu_stack = torch.nn.Sequential(
             torch.nn.Linear(1, n_hidden),
-            torch.nn.LeakyReLU(),
+            torch.nn.ELU(),
             torch.nn.Dropout(0.1),
             # Extra 1 #
             torch.nn.Linear(n_hidden, n_hidden),
-            torch.nn.LeakyReLU(),
+            torch.nn.ELU(),
             torch.nn.Dropout(0.1),
             # Extra 2 #
             # torch.nn.Linear(n_hidden, n_hidden),
@@ -76,8 +76,8 @@ def main():
     print(model)
 
     # ########## Train it ##########
-    loss_fn = torch.nn.L1Loss()  # torch.nn.MSELoss()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-2)
+    loss_fn = torch.nn.MSELoss()  # torch.nn.L1Loss()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
     model.train(True)
 
     num_data = 500

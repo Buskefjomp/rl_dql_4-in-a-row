@@ -1,6 +1,7 @@
 # Doing all of this from scratch
-python3 -m venv venv
+python3.10 -m venv venv
 source venv/bin/activate
+echo "$(pwd)/src" > venv/lib/python3.10/site-packages/extend_src_path.pth
 pip3 pip3 --update pip
 pip3 install wheel pytest ruff pdbpp
 pip3 install torch 
