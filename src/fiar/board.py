@@ -74,6 +74,10 @@ class FiarBoard:
             max_len = max(max_len, cur_len)
         return max_len
 
+    def get_flat_state(self):
+        """Return the flattened state."""
+        return np.reshape(self._state, -1)
+
     def clear_state(self):
         """Cleanup and start over."""
         self._state = np.zeros((self.cols, self.rows), dtype=int)

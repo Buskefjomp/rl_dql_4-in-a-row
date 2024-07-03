@@ -10,8 +10,10 @@ https://towardsdatascience.com/develop-your-first-ai-agent-deep-q-learning-37587
 """
 
 import argparse
+import collections
 import logging
 import pdb
+import random
 import traceback
 
 import numpy as np
@@ -64,22 +66,41 @@ def train_agent_001():
     optimizer = torch.optim.Adam(agent.parameters(), lr=1e-3)
 
     player = 1  # players number
-    episodes = 100  # how many games to train across
+    episodes = 1000  # how many games to train across
     max_steps = board.cols * board.rows * 5  # illegal steps can be taken
 
+    # NN-related
+    batch_size = 4  # 32
+    gamma = 0.98  # discount on future rewards (dampening)
+    epsilon_cur = 1  # Current chance of exploration
+    epsilon_dec = 0.998  # Decay over episodes
+    epsilon_end = 0.010  # Minimum chance of exploration
+
+    # Saving for experience replay
+    Experience = collections.namedtuple(
+        "Experience", ["state", "action", "reward", "next_state", "done"]
+    )
+    memory = collections.deque(maxlen=batch_size * 200)
+
+    # ##### Playing games #####
     for i_ep in range(episodes):
         board.clear_state()
-        # Random starting places
-        board.add_coin(player + 1, np.random.randint(0, board.cols))
+        # Random starting places ?
+        # board.add_coin(player + 1, np.random.randint(0, board.cols))
 
         for i_step in range(max_steps):
-            # ##### Present the state to the agent and get an action #####
-            x_ten = torch.Tensor(board._state)
-            q_vals = agent.forward(x_ten).detach().numpy()
-            action = np.argmax(q_vals)
-            # _LOG.debug("Ep: %4d, step: %4d, q: %s -> %d", i_ep, i_step, q_vals, action)
+            action = None
+            x_ten = torch.Tensor(board.get_flat_state())
 
-            # TODO: Add epsilon-greedy functionality (exploration)
+            if np.random.rand() < epsilon_cur:  # Explore \o/
+                action = np.random.randint(0, board.cols)
+            else:  # ##### Present the state to the agent and get an action #####
+                q_vals = agent.forward(x_ten)
+                action = torch.argmax(q_vals)
+                # _LOG.debug("Ep: %4d, step: %4d, q: %s -> %d", i_ep, i_step, q_vals, action)
+
+            if epsilon_cur > epsilon_end:
+                epsilon_cur *= epsilon_dec
 
             # ##### Take a step, save the experience (including reward) #####
             result = board.add_coin(player, action)
@@ -97,35 +118,59 @@ def train_agent_001():
             elif n > 1:  # placing coins next to each other?
                 reward += n * 10
 
-            # ##### Train the neural network #####
-            # TODO: Add batches and add experience replay
-            target_q_vals = q_vals.copy()
-            if done:
-                target_q_vals[action] = reward  # reinforce winning the game is good
-                # Realization: We only change the q-vals (nn output) for the action taken.
-                # No back-propagation changing the other outputs.
-            else:
-                # Extend with Q-values from what is achieved
-                x_new = torch.Tensor(board._state)
-                next_q_vals = agent.forward(x_new).detach().numpy()
-                target_q_vals[action] = reward + 0.99 * np.max(next_q_vals)
+            # Save it all
+            exp = Experience(
+                state=x_ten,
+                action=action,
+                reward=reward,
+                next_state=torch.Tensor(board.get_flat_state()),
+                done=done,
+            )
+            memory.append(exp)
 
-            agent.train(True)
-            y_ten = torch.Tensor(target_q_vals)
-            pred = agent(x_ten)
-            loss = loss_fn(pred, y_ten)
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-            agent.eval()
-            # _LOG.debug("Loss: %s, action: %d, reward: %f", loss, action, reward)
+            # ##### Train the neural network in a batch #####
+            if len(memory) > batch_size * 4:  # have some entropy to pick from
+                batch = random.sample(memory, batch_size)
+                states = torch.stack([exp.state for exp in batch])
+                actions = [exp.action for exp in batch]
+                rewards = [exp.reward for exp in batch]
+                n_states = torch.stack([exp.next_state for exp in batch])
+                dones = [exp.done for exp in batch]
+
+                agent.train(True)
+                cur_q_vals = agent(states)
+                nex_q_vals = agent(n_states)
+                trg_q_vals = cur_q_vals.clone().detach()
+
+                # Setup all rewards
+                for i in range(batch_size):
+                    if dones[i]:  # Reinforce winning the game is good
+                        trg_q_vals[i, actions[i]] = rewards[i]
+                        # Realization: We only change the q-vals (nn output) for the action taken.
+                        # No back-propagation changing the other outputs.
+                    else:
+                        trg_q_vals[i, actions[i]] = rewards[i] + gamma * torch.max(
+                            nex_q_vals
+                        )
+
+                # Do the training-step
+                pred = agent(states)
+                loss = loss_fn(pred, trg_q_vals)
+                loss.backward()
+                optimizer.step()
+                optimizer.zero_grad()
+                agent.eval()
+                # _LOG.debug("Loss: %s, action: %d, reward: %f", loss, action, reward)
 
             # ##### Check for done #####
             if done:
                 break
 
-        _LOG.debug("Episode: %d (%d steps), result:\n", i_ep, i_step + 1)
-        board.print_state()
+        if i_ep % 100 == 0:
+            _LOG.debug(
+                "Episode: %d/%d (%d steps), result:\n", i_ep, episodes, i_step + 1
+            )
+            board.print_state()
 
 
 class Agent001(torch.nn.Module):
@@ -147,8 +192,7 @@ class Agent001(torch.nn.Module):
         )
 
     def forward(self, board_state):
-        x = torch.flatten(board_state)
-        q_values = self.the_stack(x)
+        q_values = self.the_stack(board_state)
         return q_values
 
 
@@ -160,6 +204,7 @@ def play_agent_001():
 if __name__ == "__main__":
     try:
         main()
-    except Exception:
+    except Exception as exc:
         traceback.print_stack()
+        traceback.print_exception(exc)
         pdb.post_mortem()
