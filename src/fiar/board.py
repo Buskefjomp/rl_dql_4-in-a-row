@@ -76,6 +76,7 @@ class FiarBoard:
 
     def get_flat_state(self):
         """Return the flattened state."""
+        # TODO: this should really report '1' for the active player and '-1' for all others
         return np.reshape(self._state, -1)
 
     def clear_state(self):

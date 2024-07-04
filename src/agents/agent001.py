@@ -19,6 +19,7 @@ import traceback
 
 import numpy as np
 import torch
+
 from fiar.board import FiarBoard
 
 _LOG = logging.getLogger(__name__)
@@ -93,6 +94,7 @@ def train_agent_001():
         for i_step in range(max_steps):
             action = None
             x_ten = torch.Tensor(board.get_flat_state())
+            # TODO: this should really report '1' for the active player and '-1' for all others
 
             if np.random.rand() < epsilon_cur:  # Explore \o/
                 action = np.random.randint(0, board.cols)
@@ -110,7 +112,7 @@ def train_agent_001():
             # How did that go?
             n = 0
             if result is not None:  # Can do an illegal move here
-                n = board.get_span(1, result[0], result[1])
+                n = board.get_span(player, result[0], result[1])
             done = n >= 4
 
             # Set the reward
@@ -269,4 +271,5 @@ if __name__ == "__main__":
     except Exception as exc:
         traceback.print_stack()
         traceback.print_exception(exc)
+        pdb.post_mortem()
         pdb.post_mortem()
