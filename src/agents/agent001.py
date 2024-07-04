@@ -15,11 +15,11 @@ import logging
 import pathlib
 import pdb
 import random
+import time
 import traceback
 
 import numpy as np
 import torch
-
 from fiar.board import FiarBoard
 
 _LOG = logging.getLogger(__name__)
@@ -69,15 +69,24 @@ def train_agent_001():
     optimizer = torch.optim.Adam(agent.parameters(), lr=1e-3)
 
     player = 1  # players number
-    episodes = 1000  # how many games to train across
+    episodes = 15000  # how many games to train across
     max_steps = board.cols * board.rows * 5  # illegal steps can be taken
 
     # NN-related
-    batch_size = 4  # 32
+    batch_size = 32
     gamma = 0.98  # discount on future rewards (dampening)
     epsilon_cur = 1  # Current chance of exploration
-    epsilon_dec = 0.998  # Decay over episodes
+    epsilon_dec = 0.9995  # Decay over episodes
     epsilon_end = 0.010  # Minimum chance of exploration
+    _LOG.info(
+        "Epsilon decay: %f, will take %d/%d episodes to reach min: %f",
+        epsilon_dec,
+        int(np.log(epsilon_end) / np.log(epsilon_dec)),  # end = dec^k
+        episodes,
+        epsilon_end,
+    )
+    latest_loss = None
+    t_last = time.time()
 
     # Saving for experience replay
     Experience = collections.namedtuple(
@@ -86,6 +95,7 @@ def train_agent_001():
     memory = collections.deque(maxlen=batch_size * 200)
 
     # ##### Playing games #####
+    _LOG.info("Training %d episodes", episodes)
     for i_ep in range(episodes):
         board.clear_state()
         # Random starting places ?
@@ -93,7 +103,7 @@ def train_agent_001():
 
         for i_step in range(max_steps):
             action = None
-            x_ten = torch.Tensor(board.get_flat_state())
+            x_ten = torch.Tensor(board.get_flat_state(player))
             # TODO: this should really report '1' for the active player and '-1' for all others
 
             if np.random.rand() < epsilon_cur:  # Explore \o/
@@ -102,9 +112,6 @@ def train_agent_001():
                 q_vals = agent.forward(x_ten)
                 action = torch.argmax(q_vals)
                 # _LOG.debug("Ep: %4d, step: %4d, q: %s -> %d", i_ep, i_step, q_vals, action)
-
-            if epsilon_cur > epsilon_end:
-                epsilon_cur *= epsilon_dec
 
             # ##### Take a step, save the experience (including reward) #####
             result = board.add_coin(player, action)
@@ -121,15 +128,16 @@ def train_agent_001():
                 reward = 100
             elif result is None:
                 reward = -100  # please don't do illegal moves
-            elif n > 1:  # placing coins next to each other?
-                reward += n * 10
+            # elif n > 1:  # placing coins next to each other?
+            #     reward += n * 10
+            # ... try very sparse
 
             # Save it all
             exp = Experience(
                 state=x_ten,
                 action=action,
                 reward=reward,
-                next_state=torch.Tensor(board.get_flat_state()),
+                next_state=torch.Tensor(board.get_flat_state(player)),
                 done=done,
             )
             memory.append(exp)
@@ -166,17 +174,37 @@ def train_agent_001():
                 optimizer.step()
                 optimizer.zero_grad()
                 agent.eval()
+
+                latest_loss = loss
                 # _LOG.debug("Loss: %s, action: %d, reward: %f", loss, action, reward)
+
+            if 1:  # Someone else adds a random coin
+                board.add_coin(player + 1, np.random.randint(0, board.cols))
 
             # ##### Check for done #####
             if done:
                 break
 
-        if i_ep % 100 == 0:
+        if epsilon_cur > epsilon_end:
+            epsilon_cur *= epsilon_dec
+
+        if (i_ep + 1) % 100 == 0:
+            t_elap = time.time() - t_last
+            t_ep = t_elap / 100
+            t_left = (episodes - i_ep) * t_ep / 60
             _LOG.info(
-                "Episode: %d/%d (%d steps), result:\n", i_ep, episodes, i_step + 1
+                "Episode: %d/%d (%d steps), epsilon: %1.3f, loss: %s, t_ep: %1.6fs, t_left: %2.1fm, result:\n",
+                i_ep,
+                episodes,
+                i_step + 1,
+                epsilon_cur,
+                latest_loss.item(),
+                t_ep,
+                t_left,
             )
             board.print_state()
+            t_last = time.time()
+
     _LOG.info("Did %d episodes, saving model to: %s", episodes, _MODEL_SAVE_PATH)
     torch.save(agent, _MODEL_SAVE_PATH)
 
@@ -223,7 +251,7 @@ def play_agent_001():
 
         # ########## Agent move ##########
         _LOG.info("Agent moves")
-        x_ten = torch.Tensor(board.get_flat_state())
+        x_ten = torch.Tensor(board.get_flat_state(player_agent))
         q_vals = agent.forward(x_ten)
         action = torch.argmax(q_vals)
         _LOG.debug("\tQ-vals: %s", q_vals)

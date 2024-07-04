@@ -74,9 +74,19 @@ class FiarBoard:
             max_len = max(max_len, cur_len)
         return max_len
 
-    def get_flat_state(self):
+    def get_flat_state(self, player):
         """Return the flattened state."""
-        # TODO: this should really report '1' for the active player and '-1' for all others
+        ret_state = np.reshape(self._state.copy(), -1)
+
+        for i, v in enumerate(ret_state):
+            if v == 0:
+                continue
+            if v == player:
+                ret_state[i] = 1
+            else:
+                ret_state[i] = -1
+
+        assert len(ret_state.shape) == 1
         return np.reshape(self._state, -1)
 
     def clear_state(self):
