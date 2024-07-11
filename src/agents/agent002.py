@@ -89,17 +89,17 @@ def train_agent_002():
     agent = Agent002(board.cols * board.rows, board.cols).to("cpu")
     _LOG.info("Training agent:\n%s", agent)
     loss_fn = torch.nn.MSELoss()  # TODO: Huber-loss instead?
-    optimizer = torch.optim.Adam(agent.parameters(), lr=1e-4)
+    optimizer = torch.optim.Adam(agent.parameters(), lr=1e-3)
 
     episodes = 100000  # how many games to train across
     max_steps = board.cols * board.rows * 1 + 10  # few illegal steps can be taken
 
     # NN-related
     batch_size = 64  # We want to train on a few games every time we add ~one (and forget another), # TODO: Statistics on number of moves in a game?
-    memory = 100000  # How many moves to store
-    gamma = 0.75  # Discount across steps, can be 1.0 for full reward
+    memory = 50000  # How many moves to store
+    gamma = 1.0  # Discount across steps, can be 1.0 for full reward
     epsilon_cur = 1  # Current chance of exploration
-    epsilon_dec = 0.99998  # Decay over episodes
+    epsilon_dec = 0.99995  # Decay over episodes
     epsilon_end = 0.010  # Minimum chance of exploration
     _LOG.info(
         "Epsilon decay: %f, will take %d/%d episodes to reach min: %f",
@@ -197,30 +197,30 @@ def train_agent_002():
             if the_win is not None:
                 the_win += 1  # map to board-state
             _LOG.info(
-                "Played episode %d, num moves: %d, win_player: %s, end-state:\n",
+                "Played episode %d, num moves: %d, win_player: %s, end-state:",
                 i_ep,
                 i_step,
                 the_win,
             )
             board.print_state()
-            _LOG.info(
-                "\tPlayer 0 moves: %s",
-                " | ".join(
-                    [
-                        f"({step.action} -> { step.reward:2.1f}"
-                        for step in player_steps[0]
-                    ]
-                ),
-            )
-            _LOG.info(
-                "\tPlayer 1 moves: %s",
-                " | ".join(
-                    [
-                        f"({step.action} -> { step.reward:2.1f})"
-                        for step in player_steps[1]
-                    ]
-                ),
-            )
+            # _LOG.info(
+            #     "\tPlayer 0 moves: %s",
+            #     " | ".join(
+            #         [
+            #             f"({step.action} -> { step.reward:2.1f}"
+            #             for step in player_steps[0]
+            #         ]
+            #     ),
+            # )
+            # _LOG.info(
+            #     "\tPlayer 1 moves: %s",
+            #     " | ".join(
+            #         [
+            #             f"({step.action} -> { step.reward:2.1f})"
+            #             for step in player_steps[1]
+            #         ]
+            #     ),
+            # )
             _LOG.info("Win-rates: %s (0, 1, draw)", who_wins / who_wins.sum())
 
         # ##### Post-process the game #####
