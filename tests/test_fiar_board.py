@@ -70,5 +70,25 @@ def test_get_span():
     # dut.print_state()
 
 
+def test_get_unowned_span():
+    """Does it work if we get the unowned span?"""
+    dut = FiarBoard()
+
+    s = dut._state  # let's mangle this
+    p1 = 1
+    p2 = 2
+
+    # Test the horizontal
+    s[0, 0] = p1
+    assert dut.get_span(p1, 0, 0) == 1
+    assert dut.get_span(p1, 1, 0, allow_not_owned=True) == 1, "Block 1 connected?"
+    assert dut.get_span(p1, 2, 0, allow_not_owned=True) == 0, "Not blocking anything"
+    s[1, 0] = p1
+    assert dut.get_span(p1, 0, 0) == 2
+    assert dut.get_span(p1, 2, 0, allow_not_owned=True) == 2
+
+
 if __name__ == "__main__":
     test_add_count()
+    test_get_span()
+    test_get_unowned_span()

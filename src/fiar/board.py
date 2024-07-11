@@ -43,20 +43,28 @@ class FiarBoard:
 
         return (column, end_row)
 
-    def get_span(self, player, the_col, the_row):
+    def get_span(self, player, the_col, the_row, allow_not_owned=False):
         """Return longest spanning line for <player> at <the_col, the_row> or None if illegal."""
         if (the_col < 0) or (self.cols <= the_col):
             return None
         if (the_row < 0) or (self.rows <= the_row):
             return None
-        if self._state[the_col, the_row] != player:
+        if (not allow_not_owned) and self._state[the_col, the_row] != player:
             return 0
 
         # Start the search - from the middle and out (one could close the row between two halves)
         # Do left and right, up and down and the two diagonals
         max_len = 0
+        cur_len_init = 1
+        if allow_not_owned:
+            cur_len_init = 0
+            assert self._state[the_col, the_row] != player, "Cannot own this... misuse?"
+
         for dx, dy in ((+1, 0), (0, +1), (+1, +1), (+1, -1)):
             cur_len = 1  # this is the initial spot
+            if allow_not_owned:
+                cur_len = cur_len_init
+
             # print("d x-y", dx, dy, "base", the_col, the_row)
             for dir in (-1, 1):
                 for i_step in range(1, 4):
@@ -82,7 +90,7 @@ class FiarBoard:
             if v == 0:
                 continue
             if v == player:
-                ret_state[i] = 1
+                ret_state[i] = +1
             else:
                 ret_state[i] = -1
 

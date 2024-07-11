@@ -112,7 +112,6 @@ def train_agent_001():
             # Start stepping
             action = None
             x_ten = torch.Tensor(board.get_flat_state(player))
-            # TODO: this should really report '1' for the active player and '-1' for all others
 
             if np.random.rand() < epsilon_cur:  # Explore \o/
                 action = np.random.randint(0, board.cols)
