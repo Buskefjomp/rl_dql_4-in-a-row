@@ -47,6 +47,7 @@ import traceback
 import numpy as np
 import torch
 from fiar.board import FiarBoard
+from torch.utils.tensorboard import SummaryWriter
 
 _LOG = logging.getLogger(__name__)
 _MODEL_SAVE_PATH = pathlib.Path(__file__).absolute().parent / "agent002.torch_save"
@@ -86,6 +87,9 @@ def main():
 # ######################### Training #########################
 def train_agent_002():
     """(Re)-Train the agent."""
+
+    # TensorBoard - see https://pytorch.org/tutorials/recipes/recipes/tensorboard_with_pytorch.html
+    writer = SummaryWriter(log_dir="_agent002-logs")
 
     board = FiarBoard()
 
@@ -135,8 +139,6 @@ def train_agent_002():
     n_for_report = 100  # How many episodes before something is reported
     latest_loss = None
     who_wins = np.zeros((3,), dtype=int)
-    fh_loss = open("_agent0002-loss.txt", "w", encoding="utf-8")
-    fh_loss.write("# Episode, loss\n")
     t_start = time.time()
 
     for i_ep in range(episodes):
@@ -280,6 +282,8 @@ def train_agent_002():
 
             latest_loss = loss
 
+            writer.add_scalar("Loss/train", loss, i_ep)
+
         if ((i_ep + 1) % n_for_report == 0) and (latest_loss is not None):
             t_elap = time.time() - t_last
             if t_ep is None:
@@ -299,13 +303,11 @@ def train_agent_002():
             )
             t_last = time.time()
 
-            fh_loss.write(f"{i_ep}, {latest_loss.item()}\n")
-
         if epsilon_cur > epsilon_end:
             epsilon_cur *= epsilon_dec
     t_end = time.time()
 
-    fh_loss.close()
+    writer.close()
     _LOG.info(
         "Did %d episodes in %2.1fm, saving model to: %s",
         episodes,
