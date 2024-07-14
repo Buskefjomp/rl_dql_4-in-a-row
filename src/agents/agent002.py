@@ -39,7 +39,12 @@ Postponed / later:
 
 Notes:
     - When doing MC it was seen that several illegal moves after each other would cause previous moves to become
-      invalidated. Now stopping the game on the first bad move.
+      invalidated. Now blocking reward back-push on a bad move.
+    - Considering going back to time-differential learning - the rewards at the start of the game in MC is very high. Will
+      increase Gamma to alleviate, but do not have high hopes.
+    - It learns something - but still misses glaring win-game-states (i.e. horizontal bottom)
+      -> Should maybe add that mirroring - directly in the training perhaps? Just mirror state of coins
+         and mirror state of action.
 """
 
 import argparse
@@ -103,7 +108,11 @@ def train_agent_002():
     agent = Agent002(board.cols * board.rows, board.cols).to("cpu")
     _LOG.info("Training agent:\n%s", agent)
     loss_fn = torch.nn.HuberLoss(delta=10)  # Alternative to MSELoss()
-    optimizer = torch.optim.Adam(agent.parameters(), lr=1e-4, weight_decay=0)
+    optimizer = torch.optim.Adam(
+        agent.parameters(),
+        lr=1e-4,
+        weight_decay=0,
+    )
     # optimizer = torch.optim.SGD(agent.parameters(), lr=1e-3)
 
     episodes = 200000  # how many games to train across
@@ -113,7 +122,7 @@ def train_agent_002():
     batch_size = 32  # We want to train on a few games every time we add ~one (and forget another), # TODO: Statistics on number of moves in a game?
     n_batches = 1
     memory = 50000  # How many moves to store
-    gamma = 0.75  # Discount across steps, can be 1.0 for full reward
+    gamma = 0.80  # Discount across steps, can be 1.0 for full reward
     epsilon_cur = [1, 1]  # Starting/Current chance of exploration, for each player
     epsilon_dec = [0.99995, 0.999963]  # Decay over episodes
     epsilon_end = [
@@ -190,9 +199,9 @@ def train_agent_002():
 
             reward = 0
             if done:
-                reward = 10
+                reward = 20
             elif result is None:
-                reward -= reward_illegal  # Do not do illegal moves
+                reward += reward_illegal  # Do not do illegal moves
             else:
                 reward += -0.1  # Making a move is costly, make sure to win fast
                 if n_lined >= 2:
@@ -251,7 +260,7 @@ def train_agent_002():
             _LOG.info("Win-rates: %s (0, 1, draw)", who_wins / who_wins.sum())
 
         # ##### Post-process the game #####
-        reward_loss = -2  # Clearly your last move was a bad move
+        reward_loss = -5  # Clearly your last move was a bad move
         g_t = 0  # Back-summed reward
         # Both are loosers?
         if win_player is None:
@@ -371,17 +380,24 @@ class Agent002(torch.nn.Module):
         n_face = 42
         self.the_stack = torch.nn.Sequential(
             # Hidden layer
-            torch.nn.Linear(self.n_inputs, n_face * 1),  # input to internals
+            torch.nn.Linear(self.n_inputs, n_face * 3),  # input to internals
             torch.nn.ReLU(),
             # Hidden layer
-            # torch.nn.Linear(n_face * 2, n_face * 1),
-            # torch.nn.ReLU(),
+            torch.nn.Linear(n_face * 3, n_face * 1),
+            torch.nn.ReLU(),
             # Hidden layer
-            torch.nn.Linear(n_face * 1, n_face),
+            torch.nn.Linear(n_face * 1, 2 * self.n_outputs),
             torch.nn.ReLU(),
             # Output layer (pick an action - drop a coin in a column)
-            torch.nn.Linear(n_face, self.n_outputs),
+            torch.nn.Linear(2 * self.n_outputs, self.n_outputs),
         )
+
+        # Use He initialization for ReLU: https://saturncloud.io/blog/how-to-initialize-weights-in-pytorch-a-guide-for-data-scientists/
+        for i in [0, 2, 4, 6]:
+            torch.nn.init.kaiming_normal(
+                self.the_stack[i].weight, mode="fan_in", nonlinearity="relu"
+            )
+            torch.nn.init.zeros_(self.the_stack[i].bias)
 
     def forward(self, board_state):
         q_values = self.the_stack(board_state)
@@ -406,12 +422,12 @@ def play_agent_002():
         _LOG.info("Move %4d", i)
 
         # ########## Agent move ##########
-        _LOG.info("Agent moves")
+
         x_ten = torch.Tensor(board.get_flat_state(player_agent))
         q_vals = agent.forward(x_ten)
         action = torch.argmax(q_vals)
         _LOG.debug("\tQ-vals: %s", q_vals)
-        _LOG.debug("\tAction: %d", action)
+        _LOG.info("Agent move -> %d", action)
         result = board.add_coin(player_agent, action)
         board.print_state()
         if result is None:

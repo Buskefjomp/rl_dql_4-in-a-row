@@ -107,7 +107,12 @@ class FiarBoard:
         for i_row in range(self.rows - 1, -1, -1):
             print(f"\t{i_row:2d}: ", end="")
             for i_col in range(0, self.cols):
-                print(f" {self._state[i_col, i_row]:2d}", end="")
+                s = self._state[i_col, i_row]
+                p = "  "
+                if s != 0:
+                    p = f"{s:2d}"
+
+                print(f" {p}", end="")
             print("")
         print("\t-------------------------")
         print("\t -  ", end="")
