@@ -30,8 +30,10 @@ Initial thoughts:
 
 Postponed / later:
     - (done) Look at the loss-curve to see how we are doing
-    - Investigate Huber-loss - doing better than MSE?
+    - (done) Investigate Huber-loss - doing better than MSE?
     - Learning-rate and other hyper-parameters
+        o https://developers.google.com/machine-learning/testing-debugging/metrics/interpretic
+        -> Too high learning rate with oscillating curve...
     - After the above (to exhaust performance) -> Use a convolutional network to better get spatial information (3x3 cells?)
 
 """
@@ -97,15 +99,15 @@ def train_agent_002():
     agent = Agent002(board.cols * board.rows, board.cols).to("cpu")
     _LOG.info("Training agent:\n%s", agent)
     loss_fn = torch.nn.HuberLoss(delta=2)  # Alternative to MSELoss()
-    optimizer = torch.optim.Adam(agent.parameters(), lr=1e-3)
+    optimizer = torch.optim.Adam(agent.parameters(), lr=1e-4, weight_decay=1e-5)
 
     episodes = 100000  # how many games to train across
     max_steps = board.cols * board.rows * 1 + 10  # few illegal steps can be taken
 
     # NN-related
     batch_size = 32  # We want to train on a few games every time we add ~one (and forget another), # TODO: Statistics on number of moves in a game?
-    n_batches = 10
-    memory = 100000  # How many moves to store
+    n_batches = 1
+    memory = 25000  # How many moves to store
     gamma = 1.0  # Discount across steps, can be 1.0 for full reward
     epsilon_cur = [1, 1]  # Starting/Current chance of exploration, for each player
     epsilon_dec = [0.99995, 0.9993]  # Decay over episodes
@@ -346,13 +348,13 @@ class Agent002(torch.nn.Module):
             torch.nn.Linear(self.n_inputs, n_face * 2),  # input to internals
             torch.nn.ReLU(),
             # Hidden layer
-            torch.nn.Linear(n_face * 2, n_face * 2),
+            torch.nn.Linear(n_face * 2, n_face * 3),
             torch.nn.ReLU(),
             # Hidden layer
-            torch.nn.Linear(n_face * 2, n_face),
+            torch.nn.Linear(n_face * 3, 20),
             torch.nn.ReLU(),
             # Output layer (pick an action - drop a coin in a column)
-            torch.nn.Linear(n_face, self.n_outputs),
+            torch.nn.Linear(20, self.n_outputs),
         )
 
     def forward(self, board_state):
