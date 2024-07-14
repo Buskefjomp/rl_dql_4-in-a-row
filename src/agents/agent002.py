@@ -36,6 +36,10 @@ Postponed / later:
         -> Too high learning rate with oscillating curve...
     - After the above (to exhaust performance) -> Use a convolutional network to better get spatial information (3x3 cells?)
 
+
+Notes:
+    - When doing MC it was seen that several illegal moves after each other would cause previous moves to become
+      invalidated. Now stopping the game on the first bad move.
 """
 
 import argparse
@@ -98,22 +102,23 @@ def train_agent_002():
 
     agent = Agent002(board.cols * board.rows, board.cols).to("cpu")
     _LOG.info("Training agent:\n%s", agent)
-    loss_fn = torch.nn.HuberLoss(delta=2)  # Alternative to MSELoss()
-    optimizer = torch.optim.Adam(agent.parameters(), lr=1e-4, weight_decay=1e-5)
+    loss_fn = torch.nn.HuberLoss(delta=10)  # Alternative to MSELoss()
+    optimizer = torch.optim.Adam(agent.parameters(), lr=1e-4, weight_decay=0)
+    # optimizer = torch.optim.SGD(agent.parameters(), lr=1e-3)
 
-    episodes = 100000  # how many games to train across
-    max_steps = board.cols * board.rows * 1 + 10  # few illegal steps can be taken
+    episodes = 200000  # how many games to train across
+    max_steps = board.cols * board.rows * 2 + 10  # few illegal steps can be taken
 
     # NN-related
     batch_size = 32  # We want to train on a few games every time we add ~one (and forget another), # TODO: Statistics on number of moves in a game?
     n_batches = 1
-    memory = 25000  # How many moves to store
-    gamma = 1.0  # Discount across steps, can be 1.0 for full reward
+    memory = 50000  # How many moves to store
+    gamma = 0.75  # Discount across steps, can be 1.0 for full reward
     epsilon_cur = [1, 1]  # Starting/Current chance of exploration, for each player
-    epsilon_dec = [0.99995, 0.9993]  # Decay over episodes
+    epsilon_dec = [0.99995, 0.999963]  # Decay over episodes
     epsilon_end = [
         0.010,
-        0.60,
+        0.30,
     ]  # Minimum chance of exploration, worse for the latter player to train making bad moves
     _LOG.info(
         "Epsilon decay: %f, will take %d/%d episodes to reach min: %f (for player 0). Epsilon-min for other: %f",
@@ -149,6 +154,8 @@ def train_agent_002():
     who_wins = np.zeros((3,), dtype=int)
     t_start = time.time()
 
+    reward_illegal = -10
+
     for i_ep in range(episodes):
         # ##### Play a game #####
         # Is now Monte-Carlo like - play an entire game to its end.
@@ -183,9 +190,9 @@ def train_agent_002():
 
             reward = 0
             if done:
-                reward = 50
+                reward = 10
             elif result is None:
-                reward -= 50  # Do not do illegal moves
+                reward -= reward_illegal  # Do not do illegal moves
             else:
                 reward += -0.1  # Making a move is costly, make sure to win fast
                 if n_lined >= 2:
@@ -202,6 +209,10 @@ def train_agent_002():
             if done:
                 win_player = i_player
                 break
+            # elif result is None:
+            #     # Try ending the game on an illegal move (in training) - to avoid cascading bad moves
+            #     win_player = -1
+            #     break
         if win_player is None:
             who_wins[2] += 1
         else:
@@ -240,7 +251,7 @@ def train_agent_002():
             _LOG.info("Win-rates: %s (0, 1, draw)", who_wins / who_wins.sum())
 
         # ##### Post-process the game #####
-        reward_loss = -10  # Clearly your last move was a bad move
+        reward_loss = -2  # Clearly your last move was a bad move
         g_t = 0  # Back-summed reward
         # Both are loosers?
         if win_player is None:
@@ -257,8 +268,18 @@ def train_agent_002():
             exp = Experience(state=the_step.state, action=the_step.action, reward=g_t)
             memory.append(exp)
 
+            if i_ep % 1000 == 0:
+                print(i_step, exp)
+
+            if the_step.reward == reward_illegal:
+                # start over, on illegal move. Only the illegal move is penalized, not the ones leading
+                # up to it.
+                g_t = 0
+
         # Back-calculate the reward for the loosing player
         g_t = reward_loss
+        # if win_player == -1:
+        #     g_t = 0  # no penalty for "loosing" to an illegal move
         for i_step in range(len(player_steps[loss_player]) - 1, -1, -1):
             the_step = player_steps[loss_player][i_step]
             g_t = g_t + gamma * the_step.reward
@@ -266,6 +287,11 @@ def train_agent_002():
             # Also save this as an experience - we learn from losing
             exp = Experience(state=the_step.state, action=the_step.action, reward=g_t)
             memory.append(exp)
+
+            if the_step.reward == reward_illegal:
+                # start over, on illegal move. Only the illegal move is penalized, not the ones leading
+                # up to it.
+                g_t = 0
 
         # TODO: Train the mirrored state to enforce symmetry
 
@@ -345,16 +371,16 @@ class Agent002(torch.nn.Module):
         n_face = 42
         self.the_stack = torch.nn.Sequential(
             # Hidden layer
-            torch.nn.Linear(self.n_inputs, n_face * 2),  # input to internals
+            torch.nn.Linear(self.n_inputs, n_face * 1),  # input to internals
             torch.nn.ReLU(),
             # Hidden layer
-            torch.nn.Linear(n_face * 2, n_face * 3),
-            torch.nn.ReLU(),
+            # torch.nn.Linear(n_face * 2, n_face * 1),
+            # torch.nn.ReLU(),
             # Hidden layer
-            torch.nn.Linear(n_face * 3, 20),
+            torch.nn.Linear(n_face * 1, n_face),
             torch.nn.ReLU(),
             # Output layer (pick an action - drop a coin in a column)
-            torch.nn.Linear(20, self.n_outputs),
+            torch.nn.Linear(n_face, self.n_outputs),
         )
 
     def forward(self, board_state):
