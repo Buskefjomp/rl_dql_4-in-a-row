@@ -24,11 +24,12 @@ Initial thoughts:
     - (later) Use convolutional network to learn spatial information -> agent003
     - (maybe? doing MC and fixed across batch...) Fixed Q-target to stabilize training (update after every C steps), don't chase a moving target
     - Double DQN? Maybe not... we are using Monte-Carlo (still) to generate Q-values of states
+- (done) Have one player with a different set of epsilon-greedy parameters - to keep exploring bad moves also. Does the other one win more?
 
-- Use a hype-parameter-tuner to optimize stuff
+- Use a hyper-parameter-tuner to optimize stuff
 
 Postponed / later:
-    - Look at the loss-curve to see how we are doing
+    - (done) Look at the loss-curve to see how we are doing
     - Investigate Huber-loss - doing better than MSE?
     - Learning-rate and other hyper-parameters
     - After the above (to exhaust performance) -> Use a convolutional network to better get spatial information (3x3 cells?)
@@ -95,25 +96,30 @@ def train_agent_002():
 
     agent = Agent002(board.cols * board.rows, board.cols).to("cpu")
     _LOG.info("Training agent:\n%s", agent)
-    loss_fn = torch.nn.MSELoss()  # TODO: Huber-loss instead?
+    loss_fn = torch.nn.HuberLoss(delta=2)  # Alternative to MSELoss()
     optimizer = torch.optim.Adam(agent.parameters(), lr=1e-3)
 
     episodes = 100000  # how many games to train across
     max_steps = board.cols * board.rows * 1 + 10  # few illegal steps can be taken
 
     # NN-related
-    batch_size = 64  # We want to train on a few games every time we add ~one (and forget another), # TODO: Statistics on number of moves in a game?
-    memory = 50000  # How many moves to store
+    batch_size = 32  # We want to train on a few games every time we add ~one (and forget another), # TODO: Statistics on number of moves in a game?
+    n_batches = 10
+    memory = 100000  # How many moves to store
     gamma = 1.0  # Discount across steps, can be 1.0 for full reward
-    epsilon_cur = 1  # Current chance of exploration
-    epsilon_dec = 0.99995  # Decay over episodes
-    epsilon_end = 0.010  # Minimum chance of exploration
+    epsilon_cur = [1, 1]  # Starting/Current chance of exploration, for each player
+    epsilon_dec = [0.99995, 0.9993]  # Decay over episodes
+    epsilon_end = [
+        0.010,
+        0.60,
+    ]  # Minimum chance of exploration, worse for the latter player to train making bad moves
     _LOG.info(
-        "Epsilon decay: %f, will take %d/%d episodes to reach min: %f",
-        epsilon_dec,
-        int(np.log(epsilon_end) / np.log(epsilon_dec)),  # end = dec^k
+        "Epsilon decay: %f, will take %d/%d episodes to reach min: %f (for player 0). Epsilon-min for other: %f",
+        epsilon_dec[0],
+        int(np.log(epsilon_end[0]) / np.log(epsilon_dec[0])),  # end = dec^k
         episodes,
-        epsilon_end,
+        epsilon_end[0],
+        epsilon_end[1],
     )
     t_last = time.time()
 
@@ -158,7 +164,7 @@ def train_agent_002():
 
             # Explore or exploit?
             action = None
-            if np.random.rand() < epsilon_cur:  # Explore \o/
+            if np.random.rand() < epsilon_cur[i_player]:  # Explore \o/
                 action = np.random.randint(0, board.cols)
             else:  # ##### Present the state to the agent and get an action #####
                 q_vals = agent.forward(x_ten)
@@ -175,9 +181,9 @@ def train_agent_002():
 
             reward = 0
             if done:
-                reward = 10
+                reward = 50
             elif result is None:
-                reward -= 10  # Do not do illegal moves
+                reward -= 50  # Do not do illegal moves
             else:
                 reward += -0.1  # Making a move is costly, make sure to win fast
                 if n_lined >= 2:
@@ -232,7 +238,7 @@ def train_agent_002():
             _LOG.info("Win-rates: %s (0, 1, draw)", who_wins / who_wins.sum())
 
         # ##### Post-process the game #####
-        reward_loss = -40  # Clearly your last move was a bad move
+        reward_loss = -10  # Clearly your last move was a bad move
         g_t = 0  # Back-summed reward
         # Both are loosers?
         if win_player is None:
@@ -263,26 +269,27 @@ def train_agent_002():
 
         # ##### Train model #####
         if len(memory) > batch_size * 5:  # Have some entropy to pick from
-            batch = random.sample(memory, batch_size)
-            states = torch.stack([exp.state for exp in batch])
-            actions = [exp.action for exp in batch]
-            rewards = [exp.reward for exp in batch]
+            for i_batch in range(n_batches):
+                batch = random.sample(memory, batch_size)
+                states = torch.stack([exp.state for exp in batch])
+                actions = [exp.action for exp in batch]
+                rewards = [exp.reward for exp in batch]
 
-            agent.train(True)
-            cur_q_vals = agent(states)
-            trg_q_vals = cur_q_vals.clone().detach()
-            for i in range(batch_size):
-                trg_q_vals[i, actions[i]] = rewards[i]
+                agent.train(True)
+                cur_q_vals = agent(states)
+                trg_q_vals = cur_q_vals.clone().detach()
+                for i in range(batch_size):
+                    trg_q_vals[i, actions[i]] = rewards[i]
 
-            loss = loss_fn(cur_q_vals, trg_q_vals)
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-            agent.eval()
+                loss = loss_fn(cur_q_vals, trg_q_vals)
+                loss.backward()
+                optimizer.step()
+                optimizer.zero_grad()
+                agent.eval()
 
-            latest_loss = loss
+                latest_loss = loss
 
-            writer.add_scalar("Loss/train", loss, i_ep)
+            writer.add_scalar("Loss/train", latest_loss, i_ep)
 
         if ((i_ep + 1) % n_for_report == 0) and (latest_loss is not None):
             t_elap = time.time() - t_last
@@ -292,19 +299,21 @@ def train_agent_002():
                 t_ep = t_ep * 0.8 + 0.2 * t_elap / n_for_report
             t_left = (episodes - i_ep) * t_ep / 60
             _LOG.info(
-                "Episode: %d/%d (%d steps), epsilon: %1.3f, loss: %s,\n\tt_ep: %1.6fs, t_left: %2.1fm",
+                "Episode: %d/%d (%d steps), epsilon: %1.3f, %1.3f, loss: %s,\n\tt_ep: %1.6fs, t_left: %2.1fm",
                 i_ep,
                 episodes,
                 i_step + 1,
-                epsilon_cur,
+                epsilon_cur[0],
+                epsilon_cur[1],
                 latest_loss,
                 t_ep,
                 t_left,
             )
             t_last = time.time()
 
-        if epsilon_cur > epsilon_end:
-            epsilon_cur *= epsilon_dec
+        epsilon_cur[0] = max(epsilon_end[0], epsilon_cur[0] * epsilon_dec[0])
+        epsilon_cur[1] = max(epsilon_end[1], epsilon_cur[1] * epsilon_dec[1])
+
     t_end = time.time()
 
     writer.close()
@@ -334,10 +343,10 @@ class Agent002(torch.nn.Module):
         n_face = 42
         self.the_stack = torch.nn.Sequential(
             # Hidden layer
-            torch.nn.Linear(self.n_inputs, n_face * 3),  # input to internals
+            torch.nn.Linear(self.n_inputs, n_face * 2),  # input to internals
             torch.nn.ReLU(),
             # Hidden layer
-            torch.nn.Linear(n_face * 3, n_face * 2),
+            torch.nn.Linear(n_face * 2, n_face * 2),
             torch.nn.ReLU(),
             # Hidden layer
             torch.nn.Linear(n_face * 2, n_face),
@@ -383,7 +392,7 @@ def play_agent_002():
             n_conn = board.get_span(player_agent, result[0], result[1])
             _LOG.debug("\tAgent connected %d coins", n_conn)
             if n_conn >= 4:
-                _LOG.debug("\tAgent wins \o/ !!!")
+                _LOG.debug("\tAgent wins \\o/ !!!")
                 break
 
         # ########## Player action ##########
