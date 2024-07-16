@@ -82,11 +82,17 @@ class FiarBoard:
             max_len = max(max_len, cur_len)
         return max_len
 
-    def get_flat_state(self, player):
+    def get_flat_state(self, player, reversed=False):
         """Return the flattened state."""
-        ret_state = np.reshape(self._state.copy(), -1)
+        as_line = None
+        if reversed is False:
+            as_line = np.reshape(self._state.copy(), -1)
+        else:
+            rev = np.flip(self._state.copy(), axis=0)
+            as_line = np.reshape(rev, -1)
 
-        for i, v in enumerate(ret_state):
+        ret_state = np.zeros_like(as_line)
+        for i, v in enumerate(as_line):
             if v == 0:
                 continue
             if v == player:
@@ -95,7 +101,7 @@ class FiarBoard:
                 ret_state[i] = -1
 
         assert len(ret_state.shape) == 1
-        return np.reshape(self._state, -1)
+        return ret_state
 
     def clear_state(self):
         """Cleanup and start over."""

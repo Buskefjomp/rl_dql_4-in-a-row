@@ -88,7 +88,30 @@ def test_get_unowned_span():
     assert dut.get_span(p1, 2, 0, allow_not_owned=True) == 2
 
 
+def test_get_mirrored_state():
+    """Validate that we can do mirroring correctly."""
+    dut = FiarBoard()
+
+    s = dut._state
+    p1 = 1
+    p2 = 2
+
+    # Bottom row one in
+    s[1, 0] = p1
+    s[dut.cols - 2, 0] = p2
+    # Next up on edges
+    s[0, 1] = p2
+    s[dut.cols - 1, 1] = p1
+
+    s_0 = dut.get_flat_state(p1)
+    s_1 = dut.get_flat_state(p2, reversed=True)
+    dut.print_state()
+
+    assert all(s_0 - s_1 == 0), f"Wrong reversed state:\n{s_0}\n{s_1}"
+
+
 if __name__ == "__main__":
-    test_add_count()
-    test_get_span()
-    test_get_unowned_span()
+    # test_add_count()
+    # test_get_span()
+    # test_get_unowned_span()
+    test_get_mirrored_state()

@@ -28,6 +28,8 @@ Initial thoughts:
 
 - Use a hyper-parameter-tuner to optimize stuff
 
+- BIG bug discovered!! Returned the board-state (0 .. 2) instead of -1, +1 state. No wonder it is not learning
+
 Postponed / later:
     - (done) Look at the loss-curve to see how we are doing
     - (done) Investigate Huber-loss - doing better than MSE?
@@ -115,7 +117,7 @@ def train_agent_002():
     )
     # optimizer = torch.optim.SGD(agent.parameters(), lr=1e-3)
 
-    episodes = 200000  # how many games to train across
+    episodes = 50000  # how many games to train across
     max_steps = board.cols * board.rows * 2 + 10  # few illegal steps can be taken
 
     # NN-related
@@ -170,7 +172,7 @@ def train_agent_002():
         # Is now Monte-Carlo like - play an entire game to its end.
         board.clear_state()
 
-        player_steps = [[], []]  # steps of OneStep for players
+        player_steps = [[], []]  # Regular and mirrored states
         win_player = None
         for i_step in range(max_steps):
             i_player = (i_player + 1) % 2
@@ -179,6 +181,7 @@ def train_agent_002():
 
             # Current state
             x_ten = torch.Tensor(board.get_flat_state(act_player))
+            rev_x_ten = torch.Tensor(board.get_flat_state(act_player, reversed=True))
 
             # Explore or exploit?
             action = None
@@ -213,7 +216,13 @@ def train_agent_002():
                     reward += 0.1 * (n_block**2)  # Blocking other player is good also
 
             # Save the move
-            player_steps[i_player].append(OneStep(x_ten, action, reward))
+            if i_player == 0:  # only play on side
+                player_steps[0].append(OneStep(x_ten, action, reward))
+
+                # Add the mirrored play
+                player_steps[1].append(
+                    OneStep(rev_x_ten, board.cols - 1 - action, reward)
+                )
 
             if done:
                 win_player = i_player
@@ -260,49 +269,32 @@ def train_agent_002():
             _LOG.info("Win-rates: %s (0, 1, draw)", who_wins / who_wins.sum())
 
         # ##### Post-process the game #####
-        reward_loss = -5  # Clearly your last move was a bad move
-        g_t = 0  # Back-summed reward
-        # Both are loosers?
-        if win_player is None:
-            win_player = 0
-            g_t = reward_loss  # inject a loss penalty
-            # not writable: player_steps[win_player][-1].reward = reward_loss
-        loss_player = (win_player + 1) % 2
         # Back-calculate the reward for the winning player, see [0]
-        for i_step in range(len(player_steps[win_player]) - 1, -1, -1):
-            the_step = player_steps[win_player][i_step]
-            g_t = g_t + gamma * the_step.reward
+        for i_mirr in range(2):
+            reward_loss = -5  # Clearly your last move was a bad move
+            g_t = 0  # Back-summed reward
+            # Both are loosers?
+            if win_player is None:
+                win_player = 0
+                g_t = reward_loss  # inject a loss penalty
 
-            # Save this as an experience
-            exp = Experience(state=the_step.state, action=the_step.action, reward=g_t)
-            memory.append(exp)
+            for i_step in range(len(player_steps[win_player]) - 1, -1, -1):
+                the_step = player_steps[i_mirr][i_step]
+                g_t = g_t + gamma * the_step.reward
 
-            if i_ep % 1000 == 0:
-                print(i_step, exp)
+                # Save this as an experience
+                exp = Experience(
+                    state=the_step.state, action=the_step.action, reward=g_t
+                )
+                memory.append(exp)
 
-            if the_step.reward == reward_illegal:
-                # start over, on illegal move. Only the illegal move is penalized, not the ones leading
-                # up to it.
-                g_t = 0
+                if i_ep % 1000 == 0:
+                    print(i_step, exp)
 
-        # Back-calculate the reward for the loosing player
-        g_t = reward_loss
-        # if win_player == -1:
-        #     g_t = 0  # no penalty for "loosing" to an illegal move
-        for i_step in range(len(player_steps[loss_player]) - 1, -1, -1):
-            the_step = player_steps[loss_player][i_step]
-            g_t = g_t + gamma * the_step.reward
-
-            # Also save this as an experience - we learn from losing
-            exp = Experience(state=the_step.state, action=the_step.action, reward=g_t)
-            memory.append(exp)
-
-            if the_step.reward == reward_illegal:
-                # start over, on illegal move. Only the illegal move is penalized, not the ones leading
-                # up to it.
-                g_t = 0
-
-        # TODO: Train the mirrored state to enforce symmetry
+                if the_step.reward == reward_illegal:
+                    # start over, on illegal move. Only the illegal move is penalized, not the ones leading
+                    # up to it.
+                    g_t = 0
 
         # ##### Train model #####
         if len(memory) > batch_size * 5:  # Have some entropy to pick from
