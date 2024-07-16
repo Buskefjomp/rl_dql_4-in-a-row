@@ -109,15 +109,15 @@ def train_agent_002():
 
     agent = Agent002(board.cols * board.rows, board.cols).to("cpu")
     _LOG.info("Training agent:\n%s", agent)
-    loss_fn = torch.nn.HuberLoss(delta=10)  # Alternative to MSELoss()
+    loss_fn = torch.nn.HuberLoss(delta=2)  # Alternative to MSELoss()
     optimizer = torch.optim.Adam(
         agent.parameters(),
         lr=1e-4,
-        weight_decay=0,
+        weight_decay=1e-6,
     )
     # optimizer = torch.optim.SGD(agent.parameters(), lr=1e-3)
 
-    episodes = 150000  # how many games to train across
+    episodes = 180000  # how many games to train across
     max_steps = board.cols * board.rows * 2 + 10  # few illegal steps can be taken
 
     # NN-related
@@ -126,10 +126,10 @@ def train_agent_002():
     memory = 75000  # How many moves to store
     gamma = 0.80  # Discount across steps, can be 1.0 for full reward
     epsilon_cur = [1, 1]  # Starting/Current chance of exploration, for each player
-    epsilon_dec = [0.99995, 0.993]  # Decay over episodes
+    epsilon_dec = [0.99995, 0.99992]  # Decay over episodes
     epsilon_end = [
         0.01,
-        0.10,
+        0.20,
     ]  # Minimum chance of exploration, worse for the latter player to train making bad moves
     _LOG.info(
         "Epsilon decay: %f, will take %d/%d episodes to reach min: %f (for player 0). Epsilon-min for other: %f",
@@ -202,18 +202,20 @@ def train_agent_002():
 
             reward = 0
             if done:
-                reward = 20
+                reward = 50
             elif result is None:
                 reward += reward_illegal  # Do not do illegal moves
             else:
                 reward += -0.1  # Making a move is costly, make sure to win fast
                 if n_lined >= 2:
-                    reward += 0.2 * n_lined  # Placing adjacent is good after all
+                    reward += n_lined**2  # Placing adjacent is good after all
+                    # **2 => 4, 9
                 n_block = board.get_span(
                     not_player, result[0], result[1], allow_not_owned=True
                 )
                 if n_block >= 2:
-                    reward += 0.1 * (n_block**2)  # Blocking other player is good also
+                    reward += n_block**3  # Blocking other player is good also
+                    # **3 => 2: 6, 3: 27 ..
 
             # Save the move
             if i_player == 0:  # only play on side
