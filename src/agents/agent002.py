@@ -28,7 +28,7 @@ Initial thoughts:
 
 - Use a hyper-parameter-tuner to optimize stuff
 
-- BIG bug discovered!! Returned the board-state (0 .. 2) instead of -1, +1 state. No wonder it is not learning
+- (done) BIG bug discovered!! Returned the board-state (0 .. 2) instead of -1, +1 state. No wonder it is not learning
 
 Postponed / later:
     - (done) Look at the loss-curve to see how we are doing
@@ -109,11 +109,11 @@ def train_agent_002():
 
     agent = Agent002(board.cols * board.rows, board.cols).to("cpu")
     _LOG.info("Training agent:\n%s", agent)
-    loss_fn = torch.nn.HuberLoss(delta=2)  # Alternative to MSELoss()
+    loss_fn = torch.nn.HuberLoss(delta=4)  # Alternative to MSELoss()
     optimizer = torch.optim.Adam(
         agent.parameters(),
         lr=1e-4,
-        weight_decay=1e-6,
+        weight_decay=0,  #  1e-6,
     )
     # optimizer = torch.optim.SGD(agent.parameters(), lr=1e-3)
 
@@ -377,17 +377,20 @@ class Agent002(torch.nn.Module):
             torch.nn.Linear(self.n_inputs, n_face * 3),  # input to internals
             torch.nn.ReLU(),
             # Hidden layer
-            torch.nn.Linear(n_face * 3, n_face * 1),
+            torch.nn.Linear(n_face * 3, n_face * 2),
             torch.nn.ReLU(),
             # Hidden layer
-            torch.nn.Linear(n_face * 1, 2 * self.n_outputs),
+            torch.nn.Linear(n_face * 2, 2 * n_face),
+            torch.nn.ReLU(),
+            # Hidden layer
+            torch.nn.Linear(n_face * 2, 2 * self.n_outputs),
             torch.nn.ReLU(),
             # Output layer (pick an action - drop a coin in a column)
             torch.nn.Linear(2 * self.n_outputs, self.n_outputs),
         )
 
         # Use He initialization for ReLU: https://saturncloud.io/blog/how-to-initialize-weights-in-pytorch-a-guide-for-data-scientists/
-        for i in [0, 2, 4, 6]:
+        for i in [0, 2, 4, 6, 8]:
             torch.nn.init.kaiming_normal(
                 self.the_stack[i].weight, mode="fan_in", nonlinearity="relu"
             )
