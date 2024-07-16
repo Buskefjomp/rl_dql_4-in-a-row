@@ -117,19 +117,19 @@ def train_agent_002():
     )
     # optimizer = torch.optim.SGD(agent.parameters(), lr=1e-3)
 
-    episodes = 50000  # how many games to train across
+    episodes = 150000  # how many games to train across
     max_steps = board.cols * board.rows * 2 + 10  # few illegal steps can be taken
 
     # NN-related
-    batch_size = 32  # We want to train on a few games every time we add ~one (and forget another), # TODO: Statistics on number of moves in a game?
+    batch_size = 64  # We want to train on a few games every time we add ~one (and forget another), # TODO: Statistics on number of moves in a game?
     n_batches = 1
-    memory = 50000  # How many moves to store
+    memory = 75000  # How many moves to store
     gamma = 0.80  # Discount across steps, can be 1.0 for full reward
     epsilon_cur = [1, 1]  # Starting/Current chance of exploration, for each player
-    epsilon_dec = [0.99995, 0.999963]  # Decay over episodes
+    epsilon_dec = [0.99995, 0.993]  # Decay over episodes
     epsilon_end = [
-        0.010,
-        0.30,
+        0.01,
+        0.10,
     ]  # Minimum chance of exploration, worse for the latter player to train making bad moves
     _LOG.info(
         "Epsilon decay: %f, will take %d/%d episodes to reach min: %f (for player 0). Epsilon-min for other: %f",
